@@ -1,0 +1,30 @@
+POST /api/scheduler/book/individual
+
+{
+  "studentId": 2,
+  "appointmentId": 1
+}
+
+
+
+-------------------------------------------
+
+POST /api/scheduler/book/group
+
+{
+  "studentId": 3,
+  "groupId": 1
+}
+
+
+-------------------------------------------
+DELETE /api/scheduler/cancel/{bookingId}
+
+{
+  "reason": "Scheduling conflict"
+}
+
+
+
+-------------------------------------------
+GET /api/scheduler/student/{studentId}
