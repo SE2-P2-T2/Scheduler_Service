@@ -15,32 +15,32 @@ public class SchedulerAppointment {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "booking_id")
-    private Long id;
+    private Long bookingId;
 
-    @Column(name = "appointment_id")
-    private Long individualAppointmentId;
-
-    @Column(name = "student_id")
+    @Column(name = "student_id", nullable = false)
     private Long studentId;
 
-    @Column(name = "group_id")
-    private Long groupAppointmentId;
+    @Column(name = "appointment_id", nullable = true)
+    private Long appointmentId;
 
-    @Column(name = "booking_type")
-    private String bookingType; // "individual" or "group"
+    @Column(name = "group_id", nullable = true)
+    private Long groupId;
 
-    @Column(name = "booked_at")
+    @Column(name = "booking_type", nullable = false, length = 20)
+    private String bookingType;
+
+    @Column(name = "booked_at", nullable = false)
     private OffsetDateTime bookedAt;
 
-    @Column(name = "status")
-    private String status; // "confirmed", "cancelled"
-
-    @Column(name = "notes")
-    private String notes;
+    @Column(name = "status", nullable = false, length = 20)
+    private String status;
 
     @Column(name = "cancelled_at")
     private OffsetDateTime cancelledAt;
 
-    @Column(name = "cancellation_reason")
+    @Column(name = "cancellation_reason", columnDefinition = "TEXT")
     private String cancellationReason;
+
+    @Column(name = "notes", columnDefinition = "TEXT")
+    private String notes;
 }

@@ -6,4 +6,6 @@ import lombok.Data;
 public class IndividualBookingRequest {
     private Long studentId;
     private Long appointmentId;
+    private String description;
+    private String status;
 }
