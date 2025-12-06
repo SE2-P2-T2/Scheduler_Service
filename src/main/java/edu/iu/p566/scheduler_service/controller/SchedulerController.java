@@ -1,9 +1,14 @@
 package edu.iu.p566.scheduler_service.controller;
 
+import edu.iu.p566.scheduler_service.dto.GroupMemberDTO;
+import edu.iu.p566.scheduler_service.dto.UserDTO;
 import edu.iu.p566.scheduler_service.model.SchedulerAppointment;
 import edu.iu.p566.scheduler_service.service.SchedulerService;
-import lombok.RequiredArgsConstructor;
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -11,55 +16,131 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/scheduler")
+@CrossOrigin(origins = "*")
 @RequiredArgsConstructor
+@Slf4j
 public class SchedulerController {
 
     private final SchedulerService service;
 
-    // DTOs for JSON
-    @Data
-    static class IndividualBookingRequest {
-        private Long studentId;
-        private Long appointmentId;
-    }
-
-    @Data
-    static class GroupBookingRequest {
-        private Long studentId;
-        private Long groupId;
-    }
-
-    @Data
-    static class CancelBookingRequest {
-        private String reason;
-    }
-
-    // Book individual appointment
     @PostMapping("/book/individual")
-    public ResponseEntity<SchedulerAppointment> bookIndividual(@RequestBody IndividualBookingRequest request) {
-        return ResponseEntity.ok(
-                service.bookIndividualAppointment(request.getStudentId(), request.getAppointmentId())
+    public ResponseEntity<SchedulerAppointment> bookIndividual(@RequestBody BookIndividualRequest request) {
+        log.info("POST /api/scheduler/book/individual - studentId: {}, appointmentId: {}",
+                request.getStudentId(), request.getAppointmentId());
+        SchedulerAppointment booking = service.bookIndividualAppointment(
+                request.getStudentId(),
+                request.getAppointmentId(),
+                "confirmed",
+                request.getDescription()
         );
+        return ResponseEntity.ok(booking);
     }
 
-    // Book group appointment
     @PostMapping("/book/group")
-    public ResponseEntity<SchedulerAppointment> bookGroup(@RequestBody GroupBookingRequest request) {
-        return ResponseEntity.ok(
-                service.bookGroupAppointment(request.getStudentId(), request.getGroupId())
+    public ResponseEntity<SchedulerAppointment> bookGroup(@RequestBody BookGroupRequest request) {
+        log.info("POST /api/scheduler/book/group - studentId: {}, groupId: {}",
+                request.getStudentId(), request.getGroupId());
+        SchedulerAppointment booking = service.bookGroupAppointment(
+                request.getStudentId(),
+                request.getGroupId(),
+                "confirmed",
+                request.getDescription()
         );
+        return ResponseEntity.ok(booking);
     }
 
-    // Cancel booking
-    @DeleteMapping("/cancel/{bookingId}")
-    public ResponseEntity<Void> cancel(@PathVariable Long bookingId, @RequestBody CancelBookingRequest request) {
+    @PutMapping("/cancel/{bookingId}")
+    public ResponseEntity<Void> cancelBooking(@PathVariable Long bookingId, @RequestBody CancelBookingRequest request) {
+        log.info("PUT /api/scheduler/cancel/{} - reason: {}", bookingId, request.getReason());
         service.cancelAppointment(bookingId, request.getReason());
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok().build();
     }
 
-    // Get student bookings
+    @PutMapping("/cancel/group/{bookingId}")
+    public ResponseEntity<Void> cancelGroupForAll(
+            @PathVariable Long bookingId,
+            @RequestBody CancelBookingRequest request) {
+        log.info("PUT /api/scheduler/cancel/group/{} - reason: {}", bookingId, request.getReason());
+        service.cancelGroupAppointmentForAll(bookingId, request.getReason());
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/group/{groupId}/members")
+    public ResponseEntity<List<GroupMemberDTO>> getGroupMembers(@PathVariable Long groupId) {
+        log.info("GET /api/scheduler/group/{}/members", groupId);
+        return ResponseEntity.ok(service.getGroupMembers(groupId));
+    }
+
     @GetMapping("/student/{studentId}")
     public ResponseEntity<List<SchedulerAppointment>> getStudentAppointments(@PathVariable Long studentId) {
+        log.info("GET /api/scheduler/student/{}", studentId);
         return ResponseEntity.ok(service.getAppointmentsForStudent(studentId));
+    }
+
+    @GetMapping("/instructors")
+    public ResponseEntity<List<UserDTO>> getAllInstructors() {
+        log.info("GET /api/scheduler/instructors");
+        return ResponseEntity.ok(service.getAllInstructors());
+    }
+
+    @GetMapping("/instructor/{instructorId}")
+    public ResponseEntity<UserDTO> getInstructorById(@PathVariable Long instructorId) {
+        log.info("GET /api/scheduler/instructor/{}", instructorId);
+        return ResponseEntity.ok(service.getInstructorById(instructorId));
+    }
+
+    @GetMapping("/bookings/individual")
+    public ResponseEntity<List<SchedulerAppointment>> getIndividualBookings() {
+        log.info("GET /api/scheduler/bookings/individual");
+        return ResponseEntity.ok(service.getIndividualAppointmentBookings());
+    }
+
+    @GetMapping("/bookings/group")
+    public ResponseEntity<List<SchedulerAppointment>> getGroupBookings() {
+        log.info("GET /api/scheduler/bookings/group");
+        return ResponseEntity.ok(service.getGroupAppointmentBookings());
+    }
+
+    @GetMapping("/bookings/all")
+    public ResponseEntity<List<SchedulerAppointment>> getAllBookings() {
+        log.info("GET /api/scheduler/bookings/all");
+        return ResponseEntity.ok(service.getAllBookings());
+    }
+
+    @GetMapping("/bookings/type/{bookingType}")
+    public ResponseEntity<List<SchedulerAppointment>> getBookingsByType(@PathVariable String bookingType) {
+        log.info("GET /api/scheduler/bookings/type/{}", bookingType);
+        return ResponseEntity.ok(service.getBookingsByType(bookingType));
+    }
+
+    @GetMapping("/bookings/status/{status}")
+    public ResponseEntity<List<SchedulerAppointment>> getBookingsByStatus(@PathVariable String status) {
+        log.info("GET /api/scheduler/bookings/status/{}", status);
+        return ResponseEntity.ok(service.getBookingsByStatus(status));
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class BookIndividualRequest {
+        private Long studentId;
+        private Long appointmentId;
+        private String description;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class BookGroupRequest {
+        private Long studentId;
+        private Long groupId;
+        private String description;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CancelBookingRequest {
+        private String reason;
     }
 }

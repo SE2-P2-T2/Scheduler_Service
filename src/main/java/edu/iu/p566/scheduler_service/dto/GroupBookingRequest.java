@@ -6,4 +6,6 @@ import lombok.Data;
 public class GroupBookingRequest {
     private Long studentId;
     private Long groupId;
+    private String description;
+    private String status;
 }
