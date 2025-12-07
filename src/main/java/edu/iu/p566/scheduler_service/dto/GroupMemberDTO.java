@@ -1,0 +1,18 @@
+package edu.iu.p566.scheduler_service.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class GroupMemberDTO {
+    private Integer memberId;
+    private Integer groupId;
+    private Integer userId;
+    private String memberFirstName;
+    private String memberLastName;
+}
