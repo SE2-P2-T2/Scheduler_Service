@@ -27,6 +27,8 @@ public class SchedulerService {
     private final GroupServiceClient groupServiceClient;
     private final GroupMemberServiceClient groupMemberServiceClient;
 
+    private static final int MINIMUM_MEMBERS_TO_BOOK = 2;
+
     @Transactional
     public SchedulerAppointment bookIndividualAppointment(Long studentId, Long appointmentId, String status, String description) {
         log.info("Booking individual appointment for student: {} and appointment: {}", studentId, appointmentId);
@@ -51,8 +53,8 @@ public class SchedulerService {
     }
 
     @Transactional
-    public SchedulerAppointment bookGroupAppointment(Long studentId, Long groupId, String status, String description) {
-        log.info("Booking group appointment for student: {} and group: {}", studentId, groupId);
+    public GroupMemberDTO joinGroup(Long studentId, Long groupId) {
+        log.info("Student {} joining group {}", studentId, groupId);
 
         UserDTO student = userServiceClient.getUserById(studentId);
 
@@ -62,50 +64,99 @@ public class SchedulerService {
         }
 
         GroupAppointmentDTO group = groupServiceClient.getGroupById(groupId);
-        List<GroupMemberDTO> currentMembers = groupMemberServiceClient.getMembersByGroupId(groupId);
-
-        log.info("Group {} has {}/{} members", groupId, currentMembers.size(), group.getMaxLimit());
-
-        if (currentMembers.size() >= group.getMaxLimit()) {
-            throw new RuntimeException("Group appointment is full. Maximum capacity: " + group.getMaxLimit());
+        if (Boolean.TRUE.equals(group.getIsBooked())) {
+            throw new RuntimeException("This group has already been booked and is no longer accepting new members");
         }
 
+        List<GroupMemberDTO> currentMembers = groupMemberServiceClient.getMembersByGroupId(groupId);
+
+        Integer maxLimit = group.getMaxLimit() != null ? group.getMaxLimit() : 10;
+
+        log.info("Group {} has {}/{} members", groupId, currentMembers.size(), maxLimit);
+
+        if (currentMembers.size() >= maxLimit) {
+            throw new RuntimeException("Group is full. Maximum capacity: " + maxLimit);
+        }
         boolean alreadyInGroup = currentMembers.stream()
                 .anyMatch(member -> member.getUserId().equals(studentId.intValue()));
 
         if (alreadyInGroup) {
-            throw new RuntimeException("You have already joined this group appointment");
+            throw new RuntimeException("You have already joined this group");
+        }
+        GroupMemberDTO newMember = GroupMemberDTO.builder()
+                .groupId(groupId.intValue())
+                .userId(studentId.intValue())
+                .build();
+
+        GroupMemberDTO savedMember = groupMemberServiceClient.addGroupMember(newMember);
+
+        return savedMember;
+    }
+
+    @Transactional
+    public SchedulerAppointment bookGroupAppointmentForAll(Long studentId, Long groupId, String description, Long groupAppointmentId) {
+        log.info("Student {} booking appointment for entire group {} with groupAppointmentId: {}", studentId, groupId, groupAppointmentId);
+
+        UserDTO student = userServiceClient.getUserById(studentId);
+
+        Integer roleId = student.getRoleId();
+        if (roleId == null || roleId != 3) {
+            throw new RuntimeException("User is not a student or role is not set");
+        }
+
+        GroupAppointmentDTO group = groupServiceClient.getGroupById(groupId);
+
+        if (Boolean.TRUE.equals(group.getIsBooked())) {
+            throw new RuntimeException("This group has already been booked");
+        }
+
+        List<GroupMemberDTO> members = groupMemberServiceClient.getMembersByGroupId(groupId);
+
+        boolean isMember = members.stream()
+                .anyMatch(member -> member.getUserId().equals(studentId.intValue()));
+
+        if (!isMember) {
+            throw new RuntimeException("You must be a member of this group to book it");
+        }
+
+        if (members.size() < MINIMUM_MEMBERS_TO_BOOK) {
+            throw new RuntimeException("Group needs at least " + MINIMUM_MEMBERS_TO_BOOK +
+                    " members to book. Current members: " + members.size());
         }
 
         SchedulerAppointment booking = SchedulerAppointment.builder()
                 .studentId(studentId)
                 .groupId(groupId)
+                .groupAppointmentId(groupAppointmentId)
                 .bookingType("group")
-                .status(status)
-                .notes(description)
+                .status("confirmed")
+                .notes(description + " | Booked by: " + student.getFirstName() + " " + student.getLastName())
                 .bookedAt(OffsetDateTime.now())
                 .build();
 
         SchedulerAppointment savedBooking = schedulerRepository.save(booking);
-        log.info("Booking saved with ID: {}", savedBooking.getBookingId());
-
-        try {
-            GroupMemberDTO newMember = GroupMemberDTO.builder()
-                    .groupId(groupId.intValue())
-                    .userId(studentId.intValue())
-                    .memberFirstName(student.getFirstName())
-                    .memberLastName(student.getLastName())
-                    .build();
-
-            GroupMemberDTO savedMember = groupMemberServiceClient.addGroupMember(newMember);
-            log.info("Student {} added to group_members with member_id: {}", studentId, savedMember.getMemberId());
-        } catch (Exception e) {
-            log.error("Failed to add student to group_members table: {}", e.getMessage());
-            schedulerRepository.delete(savedBooking);
-            throw new RuntimeException("Failed to add student to group. Please try again.", e);
-        }
+        log.info("Booking created with ID: {} for group {} and groupAppointmentId: {}", savedBooking.getBookingId(), groupId, groupAppointmentId);
 
         return savedBooking;
+    }
+
+    @Transactional
+    public void leaveGroup(Long studentId, Long groupId) {
+        log.info("Student {} leaving group {}", studentId, groupId);
+
+        GroupAppointmentDTO group = groupServiceClient.getGroupById(groupId);
+
+        if (Boolean.TRUE.equals(group.getIsBooked())) {
+            throw new RuntimeException("Cannot leave a group that has already been booked");
+        }
+
+        try {
+            groupMemberServiceClient.removeMemberFromGroup(groupId.intValue(), studentId.intValue());
+            log.info("Student {} removed from group {}", studentId, groupId);
+        } catch (Exception e) {
+            log.error("Failed to remove student from group: {}", e.getMessage());
+            throw new RuntimeException("Failed to leave group", e);
+        }
     }
 
     @Transactional
@@ -115,68 +166,44 @@ public class SchedulerService {
         SchedulerAppointment booking = schedulerRepository.findById(bookingId)
                 .orElseThrow(() -> new RuntimeException("Booking not found"));
 
-        if ("group".equals(booking.getBookingType()) && booking.getGroupId() != null) {
-            try {
-                groupMemberServiceClient.removeMemberFromGroup(
-                        booking.getGroupId().intValue(),
-                        booking.getStudentId().intValue()
-                );
-                log.info("Removed student {} from group_members for group {}",
-                        booking.getStudentId(), booking.getGroupId());
-            } catch (Exception e) {
-                log.warn("Failed to remove from group_members: {}", e.getMessage());
-            }
-        }
-
         booking.setStatus("cancelled");
         booking.setCancelledAt(OffsetDateTime.now());
         booking.setCancellationReason(reason);
 
         schedulerRepository.save(booking);
-    }
 
-    @Transactional
-    public void cancelGroupAppointmentForAll(Long bookingId, String reason) {
-        log.info("Cancelling group appointment for all members: {} with reason: {}", bookingId, reason);
-
-        SchedulerAppointment booking = schedulerRepository.findById(bookingId)
-                .orElseThrow(() -> new RuntimeException("Booking not found"));
-
-        if (!"group".equals(booking.getBookingType())) {
-            throw new RuntimeException("This is not a group appointment");
-        }
-
-        Long groupId = booking.getGroupId();
-        List<SchedulerAppointment> allGroupBookings = schedulerRepository.findByGroupIdAndStatus(groupId, "confirmed");
-
-        for (SchedulerAppointment groupBooking : allGroupBookings) {
-            groupBooking.setStatus("cancelled");
-            groupBooking.setCancelledAt(OffsetDateTime.now());
-            groupBooking.setCancellationReason(reason + " (Group cancelled by member)");
-            schedulerRepository.save(groupBooking);
-        }
-
-        try {
-            groupMemberServiceClient.deleteAllMembersByGroupId(groupId.intValue());
-            log.info("Removed all members from group_members for group {}", groupId);
-        } catch (Exception e) {
-            log.error("Failed to remove all members from group_members: {}", e.getMessage());
-        }
-
-        log.info("Cancelled {} group bookings and removed all members for group {}",
-                allGroupBookings.size(), groupId);
+        log.info("Booking cancelled. Group availability is determined by booking status.");
     }
 
     public List<GroupMemberDTO> getGroupMembers(Long groupId) {
         log.info("Getting members for group: {}", groupId);
-        return groupMemberServiceClient.getMembersByGroupId(groupId);
+        List<GroupMemberDTO> members = groupMemberServiceClient.getMembersByGroupId(groupId);
+
+        members.forEach(member -> {
+            try {
+                UserDTO user = userServiceClient.getUserById(member.getUserId().longValue());
+                member.setMemberFirstName(user.getFirstName());
+                member.setMemberLastName(user.getLastName());
+            } catch (Exception e) {
+                log.error("Failed to fetch user details for userId: {}", member.getUserId(), e);
+                member.setMemberFirstName("Unknown");
+                member.setMemberLastName("User");
+            }
+        });
+
+        return members;
+    }
+
+    public boolean isUserMemberOfGroup(Long studentId, Long groupId) {
+        List<GroupMemberDTO> members = groupMemberServiceClient.getMembersByGroupId(groupId);
+        return members.stream()
+                .anyMatch(member -> member.getUserId().equals(studentId.intValue()));
     }
 
     public List<SchedulerAppointment> getAppointmentsForStudent(Long studentId) {
         log.info("Getting appointments for student: {}", studentId);
         return schedulerRepository.findByStudentId(studentId);
     }
-
 
     public List<UserDTO> getAllInstructors() {
         log.info("Getting all instructors from User Service");
@@ -208,7 +235,6 @@ public class SchedulerService {
         }
         return user;
     }
-
 
     public List<SchedulerAppointment> getIndividualAppointmentBookingsByInstructor(Long instructorId) {
         log.info("Getting individual appointment bookings for instructor: {}", instructorId);

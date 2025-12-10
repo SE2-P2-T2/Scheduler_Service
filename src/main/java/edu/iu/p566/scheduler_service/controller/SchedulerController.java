@@ -23,6 +23,7 @@ public class SchedulerController {
 
     private final SchedulerService service;
 
+
     @PostMapping("/book/individual")
     public ResponseEntity<SchedulerAppointment> bookIndividual(@RequestBody BookIndividualRequest request) {
         log.info("POST /api/scheduler/book/individual - studentId: {}, appointmentId: {}",
@@ -36,32 +37,48 @@ public class SchedulerController {
         return ResponseEntity.ok(booking);
     }
 
-    @PostMapping("/book/group")
-    public ResponseEntity<SchedulerAppointment> bookGroup(@RequestBody BookGroupRequest request) {
-        log.info("POST /api/scheduler/book/group - studentId: {}, groupId: {}",
-                request.getStudentId(), request.getGroupId());
-        SchedulerAppointment booking = service.bookGroupAppointment(
+    @PostMapping("/group/{groupId}/join")
+    public ResponseEntity<GroupMemberDTO> joinGroup(
+            @PathVariable Long groupId,
+            @RequestBody JoinGroupRequest request) {
+        log.info("POST /api/scheduler/group/{}/join - studentId: {}", groupId, request.getStudentId());
+        GroupMemberDTO member = service.joinGroup(request.getStudentId(), groupId);
+        return ResponseEntity.ok(member);
+    }
+
+    @PostMapping("/group/{groupId}/book")
+    public ResponseEntity<SchedulerAppointment> bookGroupForAll( @RequestBody BookGroupForAllRequest request) {
+        log.info("POST /api/scheduler/group/{}/book - studentId: {}, groupAppointmentId: {}", request.getStudentId(), request.getGroupAppointmentId());
+        SchedulerAppointment booking = service.bookGroupAppointmentForAll(
                 request.getStudentId(),
                 request.getGroupId(),
-                "confirmed",
-                request.getDescription()
+                request.getDescription(),
+                request.getGroupAppointmentId()
         );
         return ResponseEntity.ok(booking);
+    }
+
+    @DeleteMapping("/group/{groupId}/leave")
+    public ResponseEntity<Void> leaveGroup(
+            @PathVariable Long groupId,
+            @RequestParam Long studentId) {
+        log.info("DELETE /api/scheduler/group/{}/leave - studentId: {}", groupId, studentId);
+        service.leaveGroup(studentId, groupId);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/group/{groupId}/is-member")
+    public ResponseEntity<Boolean> isUserMemberOfGroup(
+            @PathVariable Long groupId,
+            @RequestParam Long studentId) {
+        log.info("GET /api/scheduler/group/{}/is-member - studentId: {}", groupId, studentId);
+        return ResponseEntity.ok(service.isUserMemberOfGroup(studentId, groupId));
     }
 
     @PutMapping("/cancel/{bookingId}")
     public ResponseEntity<Void> cancelBooking(@PathVariable Long bookingId, @RequestBody CancelBookingRequest request) {
         log.info("PUT /api/scheduler/cancel/{} - reason: {}", bookingId, request.getReason());
         service.cancelAppointment(bookingId, request.getReason());
-        return ResponseEntity.ok().build();
-    }
-
-    @PutMapping("/cancel/group/{bookingId}")
-    public ResponseEntity<Void> cancelGroupForAll(
-            @PathVariable Long bookingId,
-            @RequestBody CancelBookingRequest request) {
-        log.info("PUT /api/scheduler/cancel/group/{} - reason: {}", bookingId, request.getReason());
-        service.cancelGroupAppointmentForAll(bookingId, request.getReason());
         return ResponseEntity.ok().build();
     }
 
@@ -131,10 +148,18 @@ public class SchedulerController {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class BookGroupRequest {
+    public static class JoinGroupRequest {
         private Long studentId;
-        private Long groupId;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class BookGroupForAllRequest {
+        private Long studentId;
         private String description;
+        private Long groupAppointmentId;
+        private Long groupId;
     }
 
     @Data

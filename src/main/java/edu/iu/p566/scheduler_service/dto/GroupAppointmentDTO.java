@@ -19,4 +19,8 @@ public class GroupAppointmentDTO {
     private String description;
     private String status;
     private String createdAt;
+    private Boolean isBooked;
+    private Long bookedAppointmentId;
+    private Long bookedByUserId;
+    private String bookedAt;
 }
