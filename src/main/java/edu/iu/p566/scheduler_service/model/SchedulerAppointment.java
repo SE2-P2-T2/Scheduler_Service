@@ -20,8 +20,11 @@ public class SchedulerAppointment {
     @Column(name = "student_id", nullable = false)
     private Long studentId;
 
-    @Column(name = "appointment_id", nullable = true)
+    @Column(name = "individual_appointment_id", nullable = true)
     private Long appointmentId;
+
+    @Column(name = "group_appointment_id", nullable = true)
+    private Long groupAppointmentId;
 
     @Column(name = "group_id", nullable = true)
     private Long groupId;
