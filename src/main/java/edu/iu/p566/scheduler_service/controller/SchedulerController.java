@@ -51,7 +51,7 @@ public class SchedulerController {
         log.info("POST /api/scheduler/group/{}/book - studentId: {}, groupAppointmentId: {}", request.getStudentId(), request.getGroupAppointmentId());
         SchedulerAppointment booking = service.bookGroupAppointmentForAll(
                 request.getStudentId(),
-                groupId,
+                request.getGroupId(),
                 request.getDescription(),
                 request.getGroupAppointmentId()
         );
@@ -159,6 +159,7 @@ public class SchedulerController {
         private Long studentId;
         private String description;
         private Long groupAppointmentId;
+        private Long groupId;
     }
 
     @Data
