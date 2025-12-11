@@ -10,6 +10,9 @@ import edu.iu.p566.scheduler_service.model.SchedulerAppointment;
 import edu.iu.p566.scheduler_service.repository.SchedulerAppointmentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +56,7 @@ public class SchedulerService {
     }
 
     @Transactional
+    @CacheEvict(value = "groupMembers", key = "#groupId")
     public GroupMemberDTO joinGroup(Long studentId, Long groupId) {
         log.info("Student {} joining group {}", studentId, groupId);
 
@@ -141,6 +145,7 @@ public class SchedulerService {
     }
 
     @Transactional
+    @CacheEvict(value = "groupMembers", key = "#groupId")
     public void leaveGroup(Long studentId, Long groupId) {
         log.info("Student {} leaving group {}", studentId, groupId);
 
@@ -175,6 +180,7 @@ public class SchedulerService {
         log.info("Booking cancelled. Group availability is determined by booking status.");
     }
 
+    @Cacheable(value = "groupMembers", key = "#groupId")
     public List<GroupMemberDTO> getGroupMembers(Long groupId) {
         log.info("Getting members for group: {}", groupId);
         List<GroupMemberDTO> members = groupMemberServiceClient.getMembersByGroupId(groupId);
@@ -231,6 +237,7 @@ public class SchedulerService {
                 ));
     }
 
+    @Cacheable(value = "instructors")
     public List<UserDTO> getAllInstructors() {
         log.info("Getting all instructors from User Service");
         List<UserDTO> allUsers = userServiceClient.getAllUsers();
@@ -240,6 +247,7 @@ public class SchedulerService {
                 .collect(Collectors.toList());
     }
 
+    @Cacheable(value = "users", key = "'instructor_' + #instructorId")
     public UserDTO getInstructorById(Long instructorId) {
         log.info("Getting instructor by id: {}", instructorId);
         UserDTO user = userServiceClient.getUserById(instructorId);
@@ -251,6 +259,7 @@ public class SchedulerService {
         return user;
     }
 
+    @Cacheable(value = "users", key = "'student_' + #studentId")
     public UserDTO getStudentById(Long studentId) {
         log.info("Getting student by id: {}", studentId);
         UserDTO user = userServiceClient.getUserById(studentId);
