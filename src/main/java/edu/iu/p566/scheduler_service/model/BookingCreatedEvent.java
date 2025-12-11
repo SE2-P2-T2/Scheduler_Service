@@ -10,12 +10,15 @@ import java.time.OffsetDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class BookingCreatedEvent {
-    public String eventType = "booking.created";
-    public String version = "1.0";
-    public String correlationId;
-    public OffsetDateTime timestamp;
-    public Payload payload;
+    private String eventType = "booking.created";
+    private String version = "1.0";
+    private String correlationId;
+    private OffsetDateTime timestamp;
+    private Payload payload;
 
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class Payload {
         public Long bookingId;
         public Long studentId;
