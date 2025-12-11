@@ -2,10 +2,16 @@ spring:
   application:
     name: scheduler-service
 
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: rabbit
+    password: rabbit
+
   datasource:
-    url: jdbc:postgresql://localhost:5432/appointment-scheduler
+    url: jdbc:postgresql://localhost:5432/appointment_scheduler
     username: postgres
-    password: admin
+    password: password
     driver-class-name: org.postgresql.Driver
 
   jpa:
