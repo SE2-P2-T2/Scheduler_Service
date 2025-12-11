@@ -233,7 +233,33 @@ public class SchedulerService {
 
     public List<SchedulerAppointment> getAppointmentsForStudent(Long studentId) {
         log.info("Getting appointments for student: {}", studentId);
-        return schedulerRepository.findByStudentId(studentId);
+        List<SchedulerAppointment> directBookings = schedulerRepository.findByStudentId(studentId);
+        List<SchedulerAppointment> groupBookings = schedulerRepository.findByBookingType("group");
+
+        for (SchedulerAppointment groupBooking : groupBookings) {
+            try {
+                String bookingStatus = groupBooking.getStatus();
+                if (bookingStatus == null) continue;
+                String normalized = bookingStatus.toLowerCase();                if (!"confirmed".equals(normalized) && !"cancelled".equals(normalized)) continue;
+
+                Long groupId = groupBooking.getGroupId();
+                if (groupId == null) continue;
+                List<GroupMemberDTO> members = groupMemberServiceClient.getMembersByGroupId(groupId);
+                boolean isMember = members.stream()
+                        .anyMatch(m -> m.getUserId().longValue() == studentId.longValue());
+                if (isMember) {
+                    directBookings.add(groupBooking);
+                }
+            } catch (Exception e) {
+                log.error("Failed to check group members for booking {}: {}", groupBooking.getBookingId(), e.getMessage());
+            }
+        }
+
+        return directBookings.stream()
+                .collect(Collectors.collectingAndThen(
+                        Collectors.toMap(SchedulerAppointment::getBookingId, b -> b, (a, b) -> a),
+                        m -> m.values().stream().collect(Collectors.toList())
+                ));
     }
 
     public List<UserDTO> getAllInstructors() {
