@@ -2,10 +2,15 @@ package edu.iu.p566.scheduler_service.service;
 
 import edu.iu.p566.scheduler_service.client.GroupMemberServiceClient;
 import edu.iu.p566.scheduler_service.client.GroupServiceClient;
+import edu.iu.p566.scheduler_service.client.NotificationServiceClient;
 import edu.iu.p566.scheduler_service.client.UserServiceClient;
+import edu.iu.p566.scheduler_service.client.AppointmentServiceClient;
 import edu.iu.p566.scheduler_service.dto.GroupAppointmentDTO;
 import edu.iu.p566.scheduler_service.dto.GroupMemberDTO;
 import edu.iu.p566.scheduler_service.dto.UserDTO;
+import edu.iu.p566.scheduler_service.dto.notification.CancelNotificationRequest;
+import edu.iu.p566.scheduler_service.dto.notification.GroupBookingNotificationRequest;
+import edu.iu.p566.scheduler_service.dto.notification.IndividualBookingNotificationRequest;
 import edu.iu.p566.scheduler_service.model.SchedulerAppointment;
 import edu.iu.p566.scheduler_service.repository.SchedulerAppointmentRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,31 +31,57 @@ public class SchedulerService {
     private final UserServiceClient userServiceClient;
     private final GroupServiceClient groupServiceClient;
     private final GroupMemberServiceClient groupMemberServiceClient;
+    private final AppointmentServiceClient appointmentServiceClient;
+    private final NotificationServiceClient notificationServiceClient;
 
     private static final int MINIMUM_MEMBERS_TO_BOOK = 2;
 
     @Transactional
-    public SchedulerAppointment bookIndividualAppointment(Long studentId, Long appointmentId, String status, String description) {
-        log.info("Booking individual appointment for student: {} and appointment: {}", studentId, appointmentId);
+public SchedulerAppointment bookIndividualAppointment(
+        Long studentId, Long appointmentId, String status, String description) {
 
-        UserDTO student = userServiceClient.getUserById(studentId);
+    log.info("Booking individual appointment for student {} and appointment {}", studentId, appointmentId);
 
-        Integer roleId = student.getRoleId();
-        if (roleId == null || roleId != 3) {
-            throw new RuntimeException("User is not a student or role is not set");
-        }
-
-        SchedulerAppointment booking = SchedulerAppointment.builder()
-                .studentId(studentId)
-                .appointmentId(appointmentId)
-                .bookingType("individual")
-                .status(status)
-                .notes(description)
-                .bookedAt(OffsetDateTime.now())
-                .build();
-
-        return schedulerRepository.save(booking);
+    // 1. Validate student
+    UserDTO student = userServiceClient.getUserById(studentId);
+    if (student.getRoleId() == null || student.getRoleId() != 3) {
+        throw new RuntimeException("User is not a student");
     }
+
+    // 2. Save booking
+    SchedulerAppointment booking = SchedulerAppointment.builder()
+            .studentId(studentId)
+            .appointmentId(appointmentId)
+            .bookingType("individual")
+            .status(status)
+            .notes(description)
+            .bookedAt(OffsetDateTime.now())
+            .build();
+
+    SchedulerAppointment saved = schedulerRepository.save(booking);
+
+    // 3. Fetch appointment details
+    var appointment = appointmentServiceClient.getIndividualAppointment(appointmentId);
+
+    // 4. Build notification request
+    IndividualBookingNotificationRequest notify = new IndividualBookingNotificationRequest();
+    notify.setStudentId(studentId);
+    notify.setAppointmentId(appointmentId);
+    notify.setAppointmentDate(appointment.getAppointmentDate());
+    notify.setStartTime(appointment.getStartTime());
+    notify.setEndTime(appointment.getEndTime());
+
+    // 5. Send notification
+    try {
+        notificationServiceClient.sendIndividualBooked(notify);
+        log.info("Sent individual booking notification for {}", studentId);
+    } catch (Exception e) {
+        log.error("Failed sending individual booking notification: {}", e.getMessage());
+    }
+
+    return saved;
+}
+
 
     @Transactional
     public GroupMemberDTO joinGroup(Long studentId, Long groupId) {
@@ -94,51 +125,64 @@ public class SchedulerService {
     }
 
     @Transactional
-    public SchedulerAppointment bookGroupAppointmentForAll(Long studentId, Long groupId, String description, Long groupAppointmentId) {
-        log.info("Student {} booking appointment for entire group {} with groupAppointmentId: {}", studentId, groupId, groupAppointmentId);
+public SchedulerAppointment bookGroupAppointmentForAll(Long studentId, Long groupId, String description, Long groupAppointmentId) {
 
-        UserDTO student = userServiceClient.getUserById(studentId);
+    log.info("Student {} booking group {} for groupAppointment {}", studentId, groupId, groupAppointmentId);
 
-        Integer roleId = student.getRoleId();
-        if (roleId == null || roleId != 3) {
-            throw new RuntimeException("User is not a student or role is not set");
-        }
+    UserDTO student = userServiceClient.getUserById(studentId);
 
-        GroupAppointmentDTO group = groupServiceClient.getGroupById(groupId);
+    // Validate student
+    if (student.getRoleId() == null || student.getRoleId() != 3)
+        throw new RuntimeException("User is not a student");
 
-        if (Boolean.TRUE.equals(group.getIsBooked())) {
-            throw new RuntimeException("This group has already been booked");
-        }
+    GroupAppointmentDTO group = groupServiceClient.getGroupById(groupId);
 
-        List<GroupMemberDTO> members = groupMemberServiceClient.getMembersByGroupId(groupId);
+    if (Boolean.TRUE.equals(group.getIsBooked()))
+        throw new RuntimeException("Group already booked");
 
-        boolean isMember = members.stream()
-                .anyMatch(member -> member.getUserId().equals(studentId.intValue()));
+    List<GroupMemberDTO> members = groupMemberServiceClient.getMembersByGroupId(groupId);
 
-        if (!isMember) {
-            throw new RuntimeException("You must be a member of this group to book it");
-        }
+    if (members.stream().noneMatch(m -> m.getUserId().equals(studentId.intValue())))
+        throw new RuntimeException("User is not a group member");
 
-        if (members.size() < MINIMUM_MEMBERS_TO_BOOK) {
-            throw new RuntimeException("Group needs at least " + MINIMUM_MEMBERS_TO_BOOK +
-                    " members to book. Current members: " + members.size());
-        }
+    if (members.size() < MINIMUM_MEMBERS_TO_BOOK)
+        throw new RuntimeException("Group needs at least " + MINIMUM_MEMBERS_TO_BOOK);
 
-        SchedulerAppointment booking = SchedulerAppointment.builder()
-                .studentId(studentId)
-                .groupId(groupId)
-                .groupAppointmentId(groupAppointmentId)
-                .bookingType("group")
-                .status("confirmed")
-                .notes(description + " | Booked by: " + student.getFirstName() + " " + student.getLastName())
-                .bookedAt(OffsetDateTime.now())
-                .build();
+    // Save booking
+    SchedulerAppointment booking = SchedulerAppointment.builder()
+            .studentId(studentId)
+            .groupId(groupId)
+            .groupAppointmentId(groupAppointmentId)
+            .bookingType("group")
+            .status("confirmed")
+            .notes(description)
+            .bookedAt(OffsetDateTime.now())
+            .build();
 
-        SchedulerAppointment savedBooking = schedulerRepository.save(booking);
-        log.info("Booking created with ID: {} for group {} and groupAppointmentId: {}", savedBooking.getBookingId(), groupId, groupAppointmentId);
+    SchedulerAppointment savedBooking = schedulerRepository.save(booking);
 
-        return savedBooking;
+    // Call Appointment Service for date/time
+    var appointment = appointmentServiceClient.getIndividualAppointment(groupAppointmentId);
+
+    // Build group notification DTO
+    GroupBookingNotificationRequest event = new GroupBookingNotificationRequest();
+    event.setGroupId(groupId);
+    event.setGroupAppointmentId(groupAppointmentId);
+    event.setAppointmentDate(appointment.getAppointmentDate());
+    event.setStartTime(appointment.getStartTime());
+    event.setEndTime(appointment.getEndTime());
+
+    // Send notification
+    try {
+        notificationServiceClient.sendGroupBooked(event);
+        log.info("Sent group booking notification for group {}", groupId);
+    } catch (Exception e) {
+        log.error("Failed sending group booking notification: {}", e.getMessage());
     }
+
+    return savedBooking;
+}
+
 
     @Transactional
     public void leaveGroup(Long studentId, Long groupId) {
@@ -160,20 +204,36 @@ public class SchedulerService {
     }
 
     @Transactional
-    public void cancelAppointment(Long bookingId, String reason) {
-        log.info("Cancelling booking: {} with reason: {}", bookingId, reason);
+public void cancelAppointment(Long bookingId, String reason) {
 
-        SchedulerAppointment booking = schedulerRepository.findById(bookingId)
-                .orElseThrow(() -> new RuntimeException("Booking not found"));
+    log.info("Cancelling booking {}", bookingId);
 
-        booking.setStatus("cancelled");
-        booking.setCancelledAt(OffsetDateTime.now());
-        booking.setCancellationReason(reason);
+    SchedulerAppointment booking = schedulerRepository.findById(bookingId)
+            .orElseThrow(() -> new RuntimeException("Booking not found"));
 
-        schedulerRepository.save(booking);
+    booking.setStatus("cancelled");
+    booking.setCancelledAt(OffsetDateTime.now());
+    booking.setCancellationReason(reason);
 
-        log.info("Booking cancelled. Group availability is determined by booking status.");
+    schedulerRepository.save(booking);
+
+    CancelNotificationRequest notify = new CancelNotificationRequest();
+    notify.setBookingId(bookingId);
+    notify.setBookingType(booking.getBookingType());
+    notify.setReason(reason);
+    notify.setCancelledAt(booking.getCancelledAt().toString());
+
+    if ("individual".equals(booking.getBookingType())) {
+        notify.setStudentId(booking.getStudentId());
+        notify.setIndividualAppointmentId(booking.getAppointmentId());
+        notificationServiceClient.sendIndividualCancelled(notify);
+    } else {
+        notify.setGroupId(booking.getGroupId());
+        notify.setGroupAppointmentId(booking.getGroupAppointmentId());
+        notificationServiceClient.sendGroupCancelled(notify);
     }
+}
+
 
     public List<GroupMemberDTO> getGroupMembers(Long groupId) {
         log.info("Getting members for group: {}", groupId);
