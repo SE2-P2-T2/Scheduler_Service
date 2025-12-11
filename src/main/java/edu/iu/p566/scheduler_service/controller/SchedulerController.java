@@ -16,7 +16,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/scheduler")
-@CrossOrigin(origins = "*")
 @RequiredArgsConstructor
 @Slf4j
 public class SchedulerController {
