@@ -6,6 +6,8 @@ import edu.iu.p566.scheduler_service.client.UserServiceClient;
 import edu.iu.p566.scheduler_service.dto.GroupAppointmentDTO;
 import edu.iu.p566.scheduler_service.dto.GroupMemberDTO;
 import edu.iu.p566.scheduler_service.dto.UserDTO;
+import edu.iu.p566.scheduler_service.messaging.BookingEventPublisher;
+import edu.iu.p566.scheduler_service.model.BookingCreatedEvent;
 import edu.iu.p566.scheduler_service.model.SchedulerAppointment;
 import edu.iu.p566.scheduler_service.repository.SchedulerAppointmentRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,7 @@ public class SchedulerService {
     private final UserServiceClient userServiceClient;
     private final GroupServiceClient groupServiceClient;
     private final GroupMemberServiceClient groupMemberServiceClient;
+    private final BookingEventPublisher bookingEventPublisher;
 
     private static final int MINIMUM_MEMBERS_TO_BOOK = 2;
 
@@ -49,7 +52,22 @@ public class SchedulerService {
                 .bookedAt(OffsetDateTime.now())
                 .build();
 
-        return schedulerRepository.save(booking);
+        SchedulerAppointment saved = schedulerRepository.save(booking);
+
+        // publish event
+        BookingCreatedEvent.Payload payload = new BookingCreatedEvent.Payload();
+        payload.bookingId = saved.getBookingId();
+        payload.studentId = saved.getStudentId();
+        payload.appointmentId = saved.getAppointmentId();
+        payload.groupAppointmentId = saved.getGroupAppointmentId();
+        payload.groupId = saved.getGroupId();
+        payload.bookingType = saved.getBookingType();
+        payload.status = saved.getStatus();
+        payload.notes = saved.getNotes();
+
+        bookingEventPublisher.publishBookingCreated(payload);
+
+        return saved;
     }
 
     @Transactional
@@ -136,6 +154,19 @@ public class SchedulerService {
 
         SchedulerAppointment savedBooking = schedulerRepository.save(booking);
         log.info("Booking created with ID: {} for group {} and groupAppointmentId: {}", savedBooking.getBookingId(), groupId, groupAppointmentId);
+
+        // publish event
+        BookingCreatedEvent.Payload payload = new BookingCreatedEvent.Payload();
+        payload.bookingId = savedBooking.getBookingId();
+        payload.studentId = savedBooking.getStudentId();
+        payload.appointmentId = savedBooking.getAppointmentId();
+        payload.groupAppointmentId = savedBooking.getGroupAppointmentId();
+        payload.groupId = savedBooking.getGroupId();
+        payload.bookingType = savedBooking.getBookingType();
+        payload.status = savedBooking.getStatus();
+        payload.notes = savedBooking.getNotes();
+
+        bookingEventPublisher.publishBookingCreated(payload);
 
         return savedBooking;
     }
